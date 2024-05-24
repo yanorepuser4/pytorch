@@ -514,6 +514,7 @@ libtorch_distributed_base_sources = [
     "torch/csrc/distributed/c10d/sequence_num.cpp",
     "torch/csrc/distributed/c10d/socket.cpp",
     "torch/csrc/distributed/c10d/Work.cpp",
+    "torch/csrc/distributed/c10d/Healthcheck.cpp",
 ]
 
 # These files are only supported on Linux (and others) but not on Windows.
@@ -684,6 +685,7 @@ libtorch_cuda_distributed_extra_sources = [
     "torch/csrc/distributed/c10d/Utils.cu",
     "torch/csrc/distributed/rpc/tensorpipe_cuda.cpp",
     "torch/csrc/distributed/c10d/quantization/quantization_gpu.cu",
+    "torch/csrc/distributed/c10d/HealthcheckNCCL.cpp",
 ]
 
 libtorch_cuda_distributed_sources = libtorch_cuda_distributed_base_sources + libtorch_cuda_distributed_extra_sources

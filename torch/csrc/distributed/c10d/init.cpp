@@ -14,6 +14,7 @@
 #include <torch/csrc/distributed/c10d/ProcessGroupRoundRobin.hpp>
 #endif
 #include <torch/csrc/distributed/c10d/FakeProcessGroup.hpp>
+#include <torch/csrc/distributed/c10d/Healthcheck.hpp>
 #include <torch/csrc/distributed/c10d/ProcessGroup.hpp>
 #include <torch/csrc/distributed/c10d/PyProcessGroup.hpp>
 
@@ -23,6 +24,7 @@
 #endif
 
 #ifdef USE_C10D_NCCL
+#include <torch/csrc/distributed/c10d/HealthcheckNCCL.hpp>
 #include <torch/csrc/distributed/c10d/NCCLUtils.hpp>
 #include <torch/csrc/distributed/c10d/ProcessGroupNCCL.hpp>
 #include <torch/csrc/distributed/c10d/intra_node_comm.hpp>
@@ -1687,6 +1689,17 @@ communication mechanism.
           py::arg("rank"),
           py::arg("world_size"));
 
+  auto healthcheck =
+      py::class_<::c10d::Healthcheck, c10::intrusive_ptr<::c10d::Healthcheck>>(
+          module,
+          "Healthcheck",
+          R"(
+Base class for all Healthcheck implementations.
+)")
+          .def("shutdown", &::c10d::Healthcheck::shutdown)
+          .def_property(
+              "num_failures", &::c10d::Healthcheck::getNumFailures, nullptr);
+
   auto processGroup =
       py::class_<
           ::c10d::ProcessGroup,
@@ -2726,6 +2739,25 @@ Example::
           &::c10d::ProcessGroupNCCL::Options::global_ranks_in_group)
       .def_readwrite(
           "group_name", &::c10d::ProcessGroupNCCL::Options::group_name);
+
+  auto healthcheckNCCL = intrusive_ptr_class_<::c10d::HealthcheckNCCL>(
+                             module, "HealthcheckNCCL", healthcheck)
+                             .def(
+                                 py::init<
+                                     const c10::intrusive_ptr<::c10d::Store>&,
+                                     int,
+                                     int,
+                                     int,
+                                     bool,
+                                     std::chrono::milliseconds,
+                                     std::chrono::milliseconds>(),
+                                 py::arg("store"),
+                                 py::arg("rank"),
+                                 py::arg("world_size"),
+                                 py::arg("local_world_size"),
+                                 py::arg("abort_on_error"),
+                                 py::arg("interval"),
+                                 py::arg("timeout"));
 
 #endif
 
