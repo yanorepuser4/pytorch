@@ -30,6 +30,8 @@ except unittest.SkipTest:
         sys.exit(0)
     raise
 
+from torch.testing._internal.common_quantization import _generate_qdq_quantized_model
+
 check_model = test_torchinductor.check_model
 
 aten = torch.ops.aten
@@ -332,6 +334,48 @@ class TestSelectAlgorithm(TestCase):
             self.common(mod, (v,), atol=atol, rtol=rtol)
         self.assertEqual(counters["inductor"]["select_algorithm_autotune"], 1)
         self.assertEqual(counters["inductor"]["cpp_epilogue_fusion_counter"], 1)
+
+    @inductor_config.patch({"freezing": True})
+    @patches
+    @torch.no_grad
+    @unittest.skipIf(not TEST_MKL, "Test requires MKL")
+    @parametrize("batch_size", (32,))
+    @parametrize("in_features", (128,))
+    @parametrize("out_features", (64,))
+    @parametrize("bias", (False, True))
+    @parametrize("input_3d", (False,))
+    @dtypes(
+        torch.float32,
+    )
+    def test_int8_linear_static_shapes(
+        self, batch_size, in_features, out_features, bias, input_3d, dtype
+    ):
+        from torch._dynamo.testing import rand_strided
+
+        a = rand_strided(
+            (batch_size, in_features),
+            (in_features, 1),
+            device="cpu",
+            dtype=torch.float32,
+        )
+
+        class M(torch.nn.Module):
+            def __init__(self, bias):
+                super().__init__()
+                self.linear = torch.nn.Linear(in_features, out_features, bias)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        counters.clear()
+        ref_quantized_mod = _generate_qdq_quantized_model(
+            M(bias=bias).to(dtype=dtype).eval(),
+            (a,),
+        )
+
+        atol, rtol = 1e-3, 1e-3
+        with patch.object(select_algorithm, "VERIFY", dict(atol=atol, rtol=rtol)):
+            self.common(ref_quantized_mod, (a,), atol=atol, rtol=rtol)
 
 
 @dynamo_config.patch({"dynamic_shapes": True, "assume_static_by_default": False})
