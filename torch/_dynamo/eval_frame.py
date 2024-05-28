@@ -257,6 +257,10 @@ def make_set_enable_dynamic(enable: bool):
         )
 
 
+def make_set_compile_flag_enabled():
+    return config._make_closure_patcher(_is_compiling=True)
+
+
 class _TorchDynamoContext:
     def __init__(
         self,
@@ -285,6 +289,7 @@ class _TorchDynamoContext:
         backend = innermost_fn(callback)
         cached_backends.setdefault(id(backend), backend)
 
+        self.enter_exit_hooks.append(make_set_compile_flag_enabled())
         if dynamic is not None:
             self.enter_exit_hooks.append(make_set_enable_dynamic(dynamic))
 
