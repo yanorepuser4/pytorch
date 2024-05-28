@@ -442,11 +442,21 @@ def _ident(x: Any) -> Any:
     return x
 
 
+def extract_tensor_metadata_for_cache_key(t):
+    """
+    Extracts the tensor metadata and removes fields of the TensorMetadata
+    that are not needed for caching
+    """
+    meta = extract_tensor_metadata(t)
+    dataclasses.replace(meta, storage_offset=0, storage_bytes=None)
+    return meta
+
+
 def _reduce_fake_tensor(t):
     """
     See FxGraphCachePickler. Custom reducer to pickle FakeTensors.
     """
-    metadata = extract_tensor_metadata(t)
+    metadata = extract_tensor_metadata_for_cache_key(t)
     return (_ident, (metadata,))
 
 
@@ -477,7 +487,7 @@ def _reduce_tensor(t):
             f"FX graph cache handling of a large constant took {elapsed:.1}s. Please file an issue."
         )
 
-    metadata = extract_tensor_metadata(t)
+    metadata = extract_tensor_metadata_for_cache_key(t)
     return (_ident, (TensorMetadataAndValues(metadata, values),))
 
 
@@ -550,7 +560,7 @@ class FxGraphCachePickler(pickle.Pickler):
 
         def get_str(obj) -> str:
             if isinstance(obj, torch.Tensor):
-                return str(extract_tensor_metadata(obj))
+                return str(extract_tensor_metadata_for_cache_key(obj))
             elif isinstance(obj, bytes):
                 return "<bytes>"
             else:
