@@ -3,7 +3,6 @@ import enum
 import functools
 import pprint
 import re
-import sys
 import unittest
 import warnings
 
@@ -2840,7 +2839,7 @@ class GraphModule(torch.nn.Module):
 
         _vjp_treespec_compare = torch._functorch.eager_transforms._vjp_treespec_compare(o, _add_batch_dim_1)
 
-        _autograd_grad = torch._functorch.eager_transforms._autograd_grad([o], [diff_primals], [_add_batch_dim_1], retain_graph = True, create_graph = True);  _add_batch_dim_1 = None
+        _autograd_grad = torch._functorch.eager_transforms._autograd_grad([o], [diff_primals], [_add_batch_dim_1], retain_graph = True, create_graph = True);  o = diff_primals = _add_batch_dim_1 = None
         batched_outputs = _autograd_grad[0];  _autograd_grad = None
 
         chunked_result = torch._C._functorch._remove_batch_dim(batched_outputs, 3, 12, 0);  batched_outputs = None
@@ -2876,7 +2875,7 @@ class GraphModule(torch.nn.Module):
         jac_out_in: "f32[4, 3, 4, 3, 12]" = split_2[0];  split_2 = None
 
         unflatten: "f32[4, 3, 4, 3, 4, 3]" = jac_out_in.unflatten(-1, (4, 3));  jac_out_in = None
-        return (unflatten, diff_primals, o)
+        return (unflatten,)
 """,
         )
 
@@ -2898,7 +2897,7 @@ class GraphModule(torch.nn.Module):
 
         actual = normalize_gm(wrapped_gm.print_readable(print_output=False))
         self.assertExpectedInline(
-            "\n".join(actual.split("\n")[:-2]),
+            "\n".join(actual.split("\n")),
             """\
 class GraphModule(torch.nn.Module):
     def forward(self, L_x_: "f32[4, 3]", L_y_: "f32[3, 4]"):
@@ -2943,8 +2942,8 @@ class GraphModule(torch.nn.Module):
         _saved_tensors_hooks_disable_2 = torch._C._autograd._saved_tensors_hooks_disable("torch.func transforms don't yet support saved tensor hooks. Please open an issue with your use case.")
         _grad_increment_nesting = torch._C._functorch._grad_increment_nesting()
 
-        _wrap_for_grad_2 = torch._C._functorch._wrap_for_grad(child_2, 3)
-        child_4 = torch._C._functorch._wrap_for_grad(child_3, 3)
+        _wrap_for_grad_2 = torch._C._functorch._wrap_for_grad(child_2, 3);  child_2 = None
+        child_4 = torch._C._functorch._wrap_for_grad(child_3, 3);  child_3 = None
 
         set_inplace_requires_grad_allowed = torch._C._functorch.set_inplace_requires_grad_allowed(True)
 
@@ -2981,7 +2980,7 @@ class GraphModule(torch.nn.Module):
 
         _vjp_treespec_compare = torch._functorch.eager_transforms._vjp_treespec_compare(o, _add_batch_dim_1)
 
-        _autograd_grad = torch._functorch.eager_transforms._autograd_grad([o], [child_4], [_add_batch_dim_1], retain_graph = True, create_graph = True);  _add_batch_dim_1 = None
+        _autograd_grad = torch._functorch.eager_transforms._autograd_grad([o], [child_4], [_add_batch_dim_1], retain_graph = True, create_graph = True);  o = child_4 = _add_batch_dim_1 = None
         child_5 = _autograd_grad[0];  _autograd_grad = None
 
         child_6 = torch._C._functorch._remove_batch_dim(child_5, 3, 12, 0);  child_5 = None
@@ -3017,20 +3016,10 @@ class GraphModule(torch.nn.Module):
         split_2 = movedim.split((12,), dim = -1);  movedim = None
         jac_out_in: "f32[4, 3, 3, 4, 12]" = split_2[0];  split_2 = None
 
-        unflatten: "f32[4, 3, 3, 4, 3, 4]" = jac_out_in.unflatten(-1, (3, 4));  jac_out_in = None""",
+        unflatten: "f32[4, 3, 3, 4, 3, 4]" = jac_out_in.unflatten(-1, (3, 4));  jac_out_in = None
+        return (unflatten,)
+""",
         )
-
-        # Python 3.10 and 3.11 produces slightly different graphs
-        if sys.version_info[:2] > (3, 10):
-            self.assertExpectedInline(
-                actual.split("\n")[-2],
-                """        return (unflatten, child_2, _wrap_for_grad_1, child_3, child_4, o)""",
-            )
-        else:
-            self.assertExpectedInline(
-                actual.split("\n")[-2],
-                """        return (unflatten, child_3, child_2, _wrap_for_grad_1, child_4, o)""",
-            )
 
     def test_hessian_disable_capture(self):
         counters.clear()
@@ -3057,6 +3046,18 @@ class GraphModule(torch.nn.Module):
                 dict(counters["graph_break"]),
             )
             self.assertEqual(actual, expected)
+
+    def test_jacrev_aot_eager(self):
+        counters.clear()
+
+        def wrapper_fn(x):
+            return torch.func.jacrev(torch.sin)(x)
+
+        x = torch.randn(4, 3)
+        actual = wrapper_fn(x)
+        expected = torch.compile(wrapper_fn, backend="aot_eager")(x)
+        self.assertEqual(actual, expected)
+        self.assertEqual(len(counters["graph_break"]), 0)
 
     def test_jacrev(self):
         counters.clear()
@@ -3118,7 +3119,7 @@ class GraphModule(torch.nn.Module):
 
         _vjp_treespec_compare = torch._functorch.eager_transforms._vjp_treespec_compare(o, _add_batch_dim)
 
-        _autograd_grad = torch._functorch.eager_transforms._autograd_grad([o], [diff_primals], [_add_batch_dim], retain_graph = True, create_graph = True);  _add_batch_dim = None
+        _autograd_grad = torch._functorch.eager_transforms._autograd_grad([o], [diff_primals], [_add_batch_dim], retain_graph = True, create_graph = True);  o = diff_primals = _add_batch_dim = None
         batched_outputs = _autograd_grad[0];  _autograd_grad = None
 
         chunked_result: "f32[12, 4, 3]" = torch._C._functorch._remove_batch_dim(batched_outputs, 1, 12, 0);  batched_outputs = None
@@ -3130,7 +3131,7 @@ class GraphModule(torch.nn.Module):
         split_1: "f32[12, 4, 3]" = split[0];  split = None
 
         output_input: "f32[4, 3, 4, 3]" = split_1.view((4, 3, 4, 3));  split_1 = None
-        return (output_input, diff_primals, o)
+        return (output_input,)
 """,
         )
 
@@ -3200,7 +3201,7 @@ class GraphModule(torch.nn.Module):
 
         _vjp_treespec_compare = torch._functorch.eager_transforms._vjp_treespec_compare(o, _add_batch_dim)
 
-        _autograd_grad = torch._functorch.eager_transforms._autograd_grad([o], [diff_primals], [_add_batch_dim], retain_graph = True, create_graph = True);  _add_batch_dim = None
+        _autograd_grad = torch._functorch.eager_transforms._autograd_grad([o], [diff_primals], [_add_batch_dim], retain_graph = True, create_graph = True);  o = diff_primals = _add_batch_dim = None
         batched_outputs = _autograd_grad[0];  _autograd_grad = None
 
         chunked_result: "f32[12, 3, 4]" = torch._C._functorch._remove_batch_dim(batched_outputs, 1, 12, 0);  batched_outputs = None
@@ -3212,7 +3213,7 @@ class GraphModule(torch.nn.Module):
         split_1: "f32[12, 3, 4]" = split[0];  split = None
 
         output_input: "f32[3, 4, 3, 4]" = split_1.view((3, 4, 3, 4));  split_1 = None
-        return (output_input, diff_primals, o)
+        return (output_input,)
 """,
         )
 
@@ -3284,7 +3285,7 @@ class GraphModule(torch.nn.Module):
 
         _vjp_treespec_compare = torch._functorch.eager_transforms._vjp_treespec_compare(o, _add_batch_dim)
 
-        _autograd_grad = torch._functorch.eager_transforms._autograd_grad([o], [diff_primals], [_add_batch_dim], retain_graph = True, create_graph = True);  _add_batch_dim = None
+        _autograd_grad = torch._functorch.eager_transforms._autograd_grad([o], [diff_primals], [_add_batch_dim], retain_graph = True, create_graph = True);  o = diff_primals = _add_batch_dim = None
         batched_outputs = _autograd_grad[0];  _autograd_grad = None
 
         chunked_result: "f32[12, 3, 4]" = torch._C._functorch._remove_batch_dim(batched_outputs, 1, 12, 0);  batched_outputs = None
@@ -3296,7 +3297,7 @@ class GraphModule(torch.nn.Module):
         split_1: "f32[12, 3, 4]" = split[0];  split = None
 
         output_input: "f32[3, 4, 3, 4]" = split_1.view((3, 4, 3, 4));  split_1 = None
-        return (output_input, aux_1, diff_primals, o)
+        return (output_input, aux_1)
 """,
         )
 
@@ -3558,6 +3559,19 @@ class GraphModule(torch.nn.Module):
                 },
             )
             self.assertEqual(actual, expected)
+
+    def test_vjp_aot_eager(self):
+        counters.clear()
+
+        def wrapper_fn(x):
+            out, vjpfunc = torch.func.vjp(torch.sin, x)
+            return out, vjpfunc(x)
+
+        x = torch.randn(4, 3)
+        actual = wrapper_fn(x)
+        expected = torch.compile(wrapper_fn, backend="aot_eager")(x)
+        self.assertEqual(actual, expected)
+        self.assertEqual(len(counters["graph_break"]), 0)
 
     def test_grad(self):
         counters.clear()
@@ -4329,6 +4343,18 @@ class GraphModule(torch.nn.Module):
 """,
         )
 
+    def test_jacfwd_aot_eager(self):
+        counters.clear()
+
+        def wrapper_fn(x):
+            return torch.func.jacfwd(torch.sin)(x)
+
+        x = torch.randn(4, 3)
+        actual = wrapper_fn(x)
+        expected = torch.compile(wrapper_fn, backend="aot_eager")(x)
+        self.assertEqual(actual, expected)
+        self.assertEqual(len(counters["graph_break"]), 0)
+
     def test_jacfwd_two_tensors_argnums(self):
         counters.clear()
 
@@ -5073,6 +5099,18 @@ class GraphModule(torch.nn.Module):
         expected = wrapper_fn(x)
         actual = torch.compile(wrapper_fn, backend="aot_eager", fullgraph=True)(x)
         self.assertEqual(actual, expected)
+
+    def test_jvp_aot_eager(self):
+        counters.clear()
+
+        def wrapper_fn(x):
+            return torch.func.jvp(torch.sin, (x,), (x,))
+
+        x = torch.randn(4, 3)
+        actual = wrapper_fn(x)
+        expected = torch.compile(wrapper_fn, backend="aot_eager")(x)
+        self.assertEqual(actual, expected)
+        self.assertEqual(len(counters["graph_break"]), 0)
 
     def test_jvp_disable_capture(self):
         counters.clear()
