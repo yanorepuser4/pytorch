@@ -391,6 +391,36 @@ class DistTensorOpsTest(DTensorTestBase):
         self.assertEqual(new_empty_strided_dt._local_tensor.stride(), (4, 1))
 
     @with_comms
+    def test_scatter(self):
+        device_mesh = DeviceMesh(self.device_type, list(range(self.world_size)))
+        comm_mode = CommDebugMode()
+
+        # case 1 all replicate: input replicated, index replicated, output replicated
+        global_indexs = [
+            torch.tensor([[0, 1, 2, 0]]),
+            torch.tensor([[0, 1, 2], [0, 1, 4]]),
+        ]
+        for scatter_dim in [0, 1]:
+            global_src = torch.arange(1, 11).reshape((2, 5))
+            global_input = torch.zeros(3, 5, dtype=global_src.dtype)
+            global_index = global_indexs[scatter_dim]
+
+            input_dt = distribute_tensor(
+                global_input.clone(), device_mesh, [Replicate()]
+            )
+            index_dt = distribute_tensor(global_index, device_mesh, [Replicate()])
+            src_dt = distribute_tensor(global_src, device_mesh, [Replicate()])
+            global_output = torch.scatter(
+                global_input, scatter_dim, global_index, global_src
+            )
+            with comm_mode:
+                output_dt = torch.scatter(input_dt, scatter_dim, index_dt, src_dt)
+
+            self.assertEqual(comm_mode.get_total_counts(), 0)
+            self.assertEqual(output_dt.placements, [Replicate()])
+            self.assertEqual(output_dt.to_local(), global_output)
+
+    @with_comms
     def test_gather(self):
         device_mesh = DeviceMesh(self.device_type, list(range(self.world_size)))
         comm_mode = CommDebugMode()
