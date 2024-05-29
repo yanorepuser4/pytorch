@@ -1546,8 +1546,8 @@ class CUDAGraphNode:
 
     def check_invariants(self, inputs: List[Tensor]) -> bool:
         """
-        Checks if this node can be run. The same pattern of tensor liveness and tensors
-        managed in the cudagraph private pool must remain stable.
+        Checks if this node can be run. The same pattern of tensor liveness, static inputs,
+        and tensors managed in the cudagraph private pool must remain stable.
         """
 
         # previously managed data pointers remain stable
@@ -1555,6 +1555,12 @@ class CUDAGraphNode:
         # return all(t.data_ptr() == data_ptr for (t, data_ptr) in zip(tensors, data_ptrs))
         if not torch._C._tensors_data_ptrs_at_indices_equal(
             inputs, self.static_input_data_ptrs, self.cudagraph_managed_idxs
+        ):
+            return False
+
+        # static input data pointers remain stable
+        if not torch._C._tensors_data_ptrs_at_indices_equal(
+            inputs, self.static_input_data_ptrs, self.static_input_idxs
         ):
             return False
 
