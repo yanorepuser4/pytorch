@@ -770,6 +770,14 @@ def _split_optim_state_dict(
     return_osd: OptimizerStateType = {STATE: state, PG: pg_state}
     pg_mapping: Dict[int, int] = {}
 
+    if all(
+        [
+            isinstance(k, int)
+            for k in cast(DictValueType, optim_state_dict[STATE]).keys()
+        ]
+    ):
+        return optim_state_dict
+
     for param_group in optim.param_groups:
         pg_state.append({PARAMS: []})
         for param in param_group[PARAMS]:
