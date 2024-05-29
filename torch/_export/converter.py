@@ -1,3 +1,5 @@
+import operator
+
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
@@ -265,6 +267,14 @@ class TS2EPConverter:
         output_name = node.output().debugName()
         self.name_to_node[output_name] = output_dict
 
+    def convert_prim_Unpack(self, node: torch._C.Node):
+        # Single input and multiple outputs for unpacking.
+        for i, outp in enumerate(node.outputs()):
+            outp_name = outp.debugName()
+            inp = self.get_fx_value(node.input())
+            fx_node = self.fx_graph.call_function(operator.getitem, (inp, i))
+            self.name_to_node[outp_name] = fx_node
+
     def convert_aten_Int(self, node: torch._C.Node):
         # converts aten::Int as aten._to_copy + aten::_local_scalar_dense
         target = torch.ops.aten._to_copy.default
@@ -352,6 +362,8 @@ class TS2EPConverter:
             self.convert_prim_ListConstruct(node)
         elif node_kind == "prim::DictConstruct":
             self.convert_prim_DictConstruct(node)
+        elif node_kind == "prim::ListUnpack":
+            self.convert_prim_Unpack(node)
         # elif node_kind == "aten::Int":
         #     convert_aten_Int(node)
         elif node_kind == "aten::_convolution":
