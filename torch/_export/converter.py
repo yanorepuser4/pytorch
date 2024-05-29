@@ -1,4 +1,5 @@
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from functools import wraps
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 from torchgen.model import FunctionSchema
 
@@ -15,6 +16,30 @@ from torch.export.graph_signature import (
 )
 from torch.fx import subgraph_rewriter
 from torch.onnx.utils import _create_jit_graph
+
+
+class _Register(dict):
+    def __call__(self, key: Union[str, List[str], Set[str]]) -> Callable:
+        def wrapper(func: Callable) -> Callable:
+            @wraps(func)
+            def inner(*args, **kwargs):
+                return func(*args, **kwargs)
+
+            if isinstance(key, str):
+                self[key] = inner
+            elif isinstance(key, (list, set)):
+                for k in key:
+                    self[k] = inner
+            else:
+                raise RuntimeError(f"{type(key)} is not supported in registry.")
+
+            return inner
+
+        return wrapper
+
+
+# Register functions for different type conversions here.
+_register = _Register()
 
 
 def inplace_optimize_sym_size_div(gm: torch.fx.GraphModule):
@@ -164,6 +189,7 @@ class TS2EPConverter:
                     )
                 )
 
+    @_register("prim::Constant")
     def convert_prim_Constant(self, node: torch._C.Node):
         name = node.output().debugName()
 
@@ -201,6 +227,7 @@ class TS2EPConverter:
 
         self.constant_map[name] = value
 
+    @_register("prim::GetAttr")
     def convert_prim_GetAttr(self, node: torch._C.Node):
         def get_attr(name: str):
             if name in self.attribute_map:
@@ -234,6 +261,7 @@ class TS2EPConverter:
         output_name = node.output().debugName()
         self.name_to_node[output_name] = fx_node
 
+    @_register("prim::ListConstruct")
     def convert_prim_ListConstruct(self, node: torch._C.Node):
         output_list = []
         for input in node.inputs():
@@ -242,6 +270,7 @@ class TS2EPConverter:
         output_name = node.output().debugName()
         self.name_to_node[output_name] = output_list
 
+    # @_register("aten::Int")
     def convert_aten_Int(self, node: torch._C.Node):
         # converts aten::Int as aten._to_copy + aten::_local_scalar_dense
         target = torch.ops.aten._to_copy.default
@@ -258,6 +287,7 @@ class TS2EPConverter:
         output_name = node.output().debugName()
         self.name_to_node[output_name] = fx_node
 
+    @_register("prim::NumToTensor")
     def convert_prim_NumToTensor(self, node: torch._C.Node):
         # converts prim::NumToTensor as aten.scalar_tensor
         target = torch.ops.aten.scalar_tensor
@@ -268,10 +298,12 @@ class TS2EPConverter:
         output_name = node.output().debugName()
         self.name_to_node[output_name] = fx_node
 
+    @_register("prim::CreateObject")
     def convert_prim_CreateObject(self, node: torch._C.Node):
         output_name = node.output().debugName()
         self.attribute_map[output_name] = ""
 
+    @_register("aten::_convolution")
     def convert_aten__convolution(self, node: torch._C.Node):
         # converts aten::_convolution as aten.convolution, since aten::_convolution
         # doesn't have a meta function
@@ -283,6 +315,7 @@ class TS2EPConverter:
         output_name = node.output().debugName()
         self.name_to_node[output_name] = fx_node
 
+    @_register("aten::div")
     def convert_aten_div(self, node: torch._C.Node):
         target = get_op_overload(node)
         schema = target._schema
@@ -316,23 +349,14 @@ class TS2EPConverter:
 
     def convert_node(self, node: torch._C.Node):
         node_kind = node.kind()
-        if node_kind == "prim::CreateObject":
-            self.convert_prim_CreateObject(node)
-        elif node_kind == "prim::Constant":
-            self.convert_prim_Constant(node)
-        elif node_kind == "prim::GetAttr":
-            self.convert_prim_GetAttr(node)
-        elif node_kind == "prim::NumToTensor":
-            self.convert_prim_NumToTensor(node)
-        elif node_kind == "prim::ListConstruct":
-            self.convert_prim_ListConstruct(node)
-        # elif node_kind == "aten::Int":
-        #     convert_aten_Int(node)
-        elif node_kind == "aten::_convolution":
-            self.convert_aten__convolution(node)
-        elif node_kind == "aten::div":
-            self.convert_aten_div(node)
-        elif node_kind.startswith("aten::"):
+        if node_kind in _register:
+            _register[node_kind](self, node)
+        else:
+            self.convert_default_node(node)
+
+    def convert_default_node(self, node: torch._C.Node):
+        node_kind = node.kind()
+        if node_kind.startswith("aten::"):
             self.convert_aten_op(node)
         else:
             raise ValueError(f"Unsupported node kind: {node_kind}")
