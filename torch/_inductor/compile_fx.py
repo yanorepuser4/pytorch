@@ -158,6 +158,7 @@ def _unlift_graph(mod, gm, graph_signature):
         )
 
     placeholder_nodes = gm.graph.find_nodes(op="placeholder")
+    placeholder_node_list = {}
     lifted_inputs = []
 
     # In AOTI, module parameters and buffers are not lifted as graph inputs.
@@ -167,6 +168,7 @@ def _unlift_graph(mod, gm, graph_signature):
     # support training.
     for node in placeholder_nodes:
         node_name = node.name
+        placeholder_node_list[node_name] = node
         if node_name in graph_signature.inputs_to_parameters:
             parameter_name = graph_signature.inputs_to_parameters[node_name]
             lifted_inputs.append(parameter_name)
@@ -190,6 +192,49 @@ def _unlift_graph(mod, gm, graph_signature):
         else:
             mutated_outputs.append(None)
 
+    mutated_out_inputs = {}
+    # Take clamp.out as an example:
+    #   aten::clamp.out(Tensor self, Scalar? min=None, Scalar? max=None, *, Tensor(a!) out) -> Tensor(a!)
+    # The produced graph will be as follows w/ current implementation, while arg0_1 is self and arg1_1 is out:
+    #   opcode         name       target                  args                       kwargs
+    #   -------------  ---------  ----------------------  -------------------------  --------
+    #   placeholder    arg0_1     arg0_1                  ()                         {}
+    #   placeholder    arg1_1     arg1_1                  ()                         {}
+    #   call_function  clamp_min  aten.clamp_min.default  (arg0_1, 0.05)             {}
+    #   call_function  clamp_max  aten.clamp_max.default  (clamp_min, 0.05)          {}
+    #   output         output     output                  ((clamp_max, clamp_max),)  {}
+    #
+    # But the graph above does not align with the semantics of aten::clamp.out as it is an inplace operation.
+    # The correct graph should be:
+    #   opcode         name       target                  args                       kwargs
+    #   -------------  ---------  ----------------------  -------------------------  --------
+    #   placeholder    arg0_1     arg0_1                  ()                         {}
+    #   placeholder    arg1_1     arg1_1                  ()                         {}
+    #   call_function  clamp_min  aten.clamp_min.default  (arg0_1, 0.05)             {}
+    #   call_function  clamp_max  aten.clamp_max.default  (clamp_min, 0.05)          {}
+    #   call_function  copy_      aten.copy_.default      (arg1_1, clamp_max)        {}
+    #   output         output     output                  (copy_,)                   {}
+    #
+    # To get the expected graph, we need to find the output node and the corresponding input node,
+    # and replace the output node with a copy_ node. By now, the check is only for single output case.
+    # The multiple output case is not supported yet.
+    inputs_to_mutate = {
+        key: val
+        for key, val in graph_signature.user_inputs_to_mutate.items()
+        if val not in graph_signature.inputs_to_parameters
+    }
+    if len(inputs_to_mutate) > 0:
+        assert all(
+            key in graph_signature.user_outputs for key, _ in inputs_to_mutate.items()
+        )
+    for out_node in outputs:
+        if out_node.name in graph_signature.user_inputs_to_mutate:
+            input_node = graph_signature.user_inputs_to_mutate[out_node.name]
+            assert input_node in placeholder_node_list
+            mutated_out_inputs[out_node] = placeholder_node_list[input_node]
+        else:
+            mutated_out_inputs[out_node] = None
+
     unlifted_gm = _unlift(
         gm,
         lifted_inputs,
@@ -198,7 +243,9 @@ def _unlift_graph(mod, gm, graph_signature):
         None,
         state_dict,
         {},
+        mutated_inputs=mutated_out_inputs,
     )
+
     return unlifted_gm
 
 
