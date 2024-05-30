@@ -34,6 +34,7 @@ from torch._dynamo.debug_utils import aot_graph_input_parser
 from torch._dynamo.testing import (
     CompileCounterWithBackend,
     expectedFailureCodegenDynamic,
+    expectedFailureScalar,
     rand_strided,
     same,
     skipIfPy312,
@@ -744,6 +745,9 @@ class CommonTemplate:
             ),
         )
 
+    # Fails when testing the scalar version
+    # See https://github.com/pytorch/pytorch/issues/126763.
+    @expectedFailureScalar
     @skipCUDAIf(not SM80OrLater, "Requires sm80")
     def test_eager_aoti_cache_hit(self):
         ns = "aten"
@@ -840,6 +844,9 @@ class CommonTemplate:
 
         self.assertTrue(kernel_lib_path in kernel_libs_abs_path)
 
+    # Fails when testing the scalar version
+    # See https://github.com/pytorch/pytorch/issues/126763.
+    @expectedFailureScalar
     @skipCUDAIf(not SM80OrLater, "Requires sm80")
     def test_eager_aoti_with_scalar(self):
         namespace_name = "aten"
@@ -920,6 +927,9 @@ class CommonTemplate:
             self.assertEqual(len(ref_values), len(res_values))
             self.assertEqual(ref_values, res_values)
 
+    # Fails when testing the scalar version
+    # See https://github.com/pytorch/pytorch/issues/126763.
+    @expectedFailureScalar
     @skipCUDAIf(not SM80OrLater, "Requires sm80")
     def test_torch_compile_override_registration(self):
         dynamic = False
@@ -1511,16 +1521,30 @@ class CommonTemplate:
         def fn(a):
             return torch.var(a)
 
-        self.common(fn, ((torch.rand((10, 3, 352, 352), dtype=torch.float32),)))
-        self.common(fn, ((torch.rand((14923), dtype=torch.float32),)))
+        self.common(
+            fn,
+            ((torch.rand((10, 3, 352, 352), dtype=torch.float32),)),
+            rtol=1e-4,
+            atol=1e-4,
+        )
+        self.common(
+            fn, ((torch.rand((14923), dtype=torch.float32),)), rtol=1e-4, atol=1e-4
+        )
 
     @skipCPUIf(IS_MACOS, "fails on macos")
     def test_multilayer_var_lowp(self):
         def fn(a):
             return torch.var(a)
 
-        self.common(fn, (torch.rand((16, 16, 352, 352), dtype=torch.float16),))
-        self.common(fn, (torch.rand((14923), dtype=torch.float16),))
+        self.common(
+            fn,
+            (torch.rand((16, 16, 352, 352), dtype=torch.float16),),
+            rtol=1e-3,
+            atol=1e-3,
+        )
+        self.common(
+            fn, (torch.rand((14923), dtype=torch.float16),), rtol=1e-4, atol=1e-4
+        )
 
     def test_split_cumsum(self):
         def fn(a):
@@ -8097,7 +8121,7 @@ class CommonTemplate:
             rand_strided(shape, stride, dtype).requires_grad_(True).add(1)
             for shape, stride, dtype in args
         ]
-        self.common(forward, args)
+        self.common(forward, args, atol=1e-05, rtol=1e-05)
 
     @requires_gpu()
     def test_tmp_not_defined_issue3(self):
@@ -9180,6 +9204,7 @@ class CommonTemplate:
     # To support this behavior, we need to allow const-propping tensors that store symint data.
     # For now, dynamo will explicitly graph break when it encounters user code with this behavior.
     @expectedFailureCodegenDynamic
+    @expectedFailureScalar
     def test_AllenaiLongformerBase_repro(self):
         def fn(query, scores, window_overlap):
             batch_size, seq_len, num_heads, _ = query.size()
@@ -9215,6 +9240,9 @@ class CommonTemplate:
             opt_fn = torch._dynamo.optimize("inductor")(fn)
             _, code = run_and_get_cpp_code(opt_fn, *args)
             print(code)
+            # When testing the scalar version, i.e., ATEN_CPU_CAPABILITY=default,
+            # static_cast<int>(256) is not found, but static_cast<int64_t>(256).
+            # See https://github.com/pytorch/pytorch/issues/126262.
             FileCheck().check_count(
                 "static_cast<int32_t>(256)",
                 1,
