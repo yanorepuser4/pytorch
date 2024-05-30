@@ -23,6 +23,8 @@ else
   TRITON_TEXT_FILE="triton"
 fi
 
+# Fake change to test CI stability
+
 # The logic here is copied from .ci/pytorch/common_utils.sh
 TRITON_PINNED_COMMIT=$(get_pinned_commit ${TRITON_TEXT_FILE})
 
