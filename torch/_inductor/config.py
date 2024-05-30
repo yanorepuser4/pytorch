@@ -834,6 +834,16 @@ class cuda:
     cutlass_op_denylist_regex: Optional[str] = "pingpong"
 
 
+# Backend to use for CPU codegen either "cpp" or "halide" (experimental)
+cpu_backend = "cpp"
+
+
+class halide:
+    # add `-no_asserts` to halide `target=`
+    # TODO(jansel): halide asserts seem to false alarm e.g. test_AllenaiLongformerBase_repro_cpu
+    no_asserts = True
+
+
 # create a directory containing lots of debug information
 class trace:
     # master switch for all debugging flags below
