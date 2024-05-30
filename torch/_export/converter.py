@@ -362,7 +362,7 @@ class TS2EPConverter:
             self.convert_prim_ListConstruct(node)
         elif node_kind == "prim::DictConstruct":
             self.convert_prim_DictConstruct(node)
-        elif node_kind == "prim::ListUnpack":
+        elif node_kind in {"prim::ListUnpack", "prim::TupleUnpack"}:
             self.convert_prim_Unpack(node)
         # elif node_kind == "aten::Int":
         #     convert_aten_Int(node)
