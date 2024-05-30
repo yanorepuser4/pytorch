@@ -373,6 +373,12 @@ assert_indirect_indexing = True
 # compute CSE bounds on variables that do not appear in the FX graph
 compute_all_bounds = False
 
+# enable the combo kernel that combines data-independent kernels (additional
+# to foreach kernels) into a single one (Experimental)
+combo_kernels = False
+# benchmark combo kernels and only allow ones with perf gains
+benchmark_combo_kernel = False
+
 # constant folding on the joint graph
 joint_graph_constant_folding = True
 

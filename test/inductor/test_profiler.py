@@ -132,10 +132,10 @@ class DynamoProfilerTests(torch._inductor.test_case.TestCase):
 
             args = (x, y)
 
-            events = self._test_profiling_kernel_names(fn, args, "_for_")
+            events = self._test_profiling_kernel_names(fn, args, "_poi_")
             event_found = False
             for event in events:
-                if event.name == "triton_for_fused_0":
+                if event.name == "triton_poi_fused_0":
                     event_found = True
                     self.assertTrue(
                         event.input_shapes
