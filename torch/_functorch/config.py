@@ -88,6 +88,13 @@ ban_recompute_not_in_allowlist = True
 # a fusion can be expensive.
 ban_recompute_reductions = True
 
+memory_budget = 1.0
+memory_budget_runtime_estimator = "flops"
+memory_budget_solver = "dp"
+
+visualize_memory_budget_pareto = (
+    os.environ.get("PARTITIONER_MEMORY_BUDGET_PARETO", "0") == "1"
+)
 
 # Sets all of the ban_recompute heuristics to False except ban_recompute_reductions
 # Generally, this will probably result in some memory improvement, but at the
