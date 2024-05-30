@@ -20,6 +20,7 @@ from torch.ao.quantization.quantize_pt2e import (
 )
 from torch.ao.quantization.quantizer.x86_inductor_quantizer import X86InductorQuantizer
 from torch.nn import functional as F
+from torch.testing._internal.common_mkldnn import bf32_on_and_off
 from torch.testing._internal.common_quantization import (
     skipIfNoDynamoSupport,
     skipIfNoONEDNN,
@@ -27,7 +28,6 @@ from torch.testing._internal.common_quantization import (
 )
 from torch.testing._internal.common_utils import IS_LINUX, skipIfRocm, TEST_MKL
 from torch.testing._internal.inductor_utils import _check_has_dynamic_shape, HAS_CPU
-from torch.testing._internal.common_mkldnn import bf32_on_and_off
 
 
 # The dict value is match_nodes(computation_op+unary_op)
@@ -307,6 +307,7 @@ class TestPatternMatcher(TestPatternMatcherBase):
     def test_conv3d_unary_cpu(self):
         self._test_conv_unary_cpu_base(dim=5)
 
+    @bf32_on_and_off()
     def test_linear_unary(self):
         class M(torch.nn.Module):
             def __init__(
@@ -335,6 +336,8 @@ class TestPatternMatcher(TestPatternMatcherBase):
             dtypes.append(torch.bfloat16)
         if torch.ops.mkldnn._is_mkldnn_fp16_supported():
             dtypes.append(torch.float16)
+        if torch.backends.mkldnn.matmul.fp32_precision == "bf16":
+            dtypes.append(torch.float32)
         options = itertools.product(unary_list, [True, False], dtypes)
         for unary_fn, bias, dtype in options:
             metrics.reset()
@@ -346,15 +349,18 @@ class TestPatternMatcher(TestPatternMatcherBase):
             matcher_count = 2
             # Add 1 for weight packing pass.
             matcher_nodes = unary_list[unary_fn] + 1
-            if self._check_unary_is_decomposed(unary_fn):
+            if dtype != torch.float32 and self._check_unary_is_decomposed(unary_fn):
                 # Has extra dtype conversion nodes for autocast.
                 matcher_nodes += 2
             self._test_common(
                 mod, (v,), matcher_count, matcher_nodes, check_autocast=dtype
             )
-            # only generated 1 kernel for "to"
-            self.assertEqual(metrics.generated_kernel_count, 1)
+            # only generated 1 kernel for "to_dtype"
+            self.assertEqual(
+                metrics.generated_kernel_count, 0 if dtype == torch.float32 else 1
+            )
 
+    @bf32_on_and_off()
     @unittest.skipIf(not TEST_MKL, "Test requires MKL")
     def test_linear_fp32(self):
         class M(torch.nn.Module):
@@ -518,6 +524,7 @@ class TestPatternMatcher(TestPatternMatcherBase):
     def test_conv3d_binary(self):
         self._test_conv_binary_base(dim=5)
 
+    @bf32_on_and_off()
     def test_linear_binary(self):
         class M(torch.nn.Module):
             def __init__(self, binary_fn, in_channels, out_channels, bias, **kwargs):
@@ -537,6 +544,8 @@ class TestPatternMatcher(TestPatternMatcherBase):
             dtypes.append(torch.bfloat16)
         if torch.ops.mkldnn._is_mkldnn_fp16_supported():
             dtypes.append(torch.float16)
+        if torch.backends.mkldnn.matmul.fp32_precision == "bf16":
+            dtypes.append(torch.float32)
         options = itertools.product(
             binary_list, [[2, 3, 10], [2, 10]], [True, False], dtypes
         )
@@ -564,8 +573,12 @@ class TestPatternMatcher(TestPatternMatcherBase):
                 match_nodes,
                 check_autocast=dtype,
             )
-            self.assertEqual(metrics.generated_kernel_count, 1)
+            # only generated 1 kernel for "to_dtype"
+            self.assertEqual(
+                metrics.generated_kernel_count, 0 if dtype == torch.float32 else 1
+            )
 
+    @bf32_on_and_off()
     def test_multi_linear_share_same_input(self):
         # llama pattern.
         class M(torch.nn.Module):
