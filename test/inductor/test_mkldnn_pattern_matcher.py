@@ -27,6 +27,7 @@ from torch.testing._internal.common_quantization import (
 )
 from torch.testing._internal.common_utils import IS_LINUX, skipIfRocm, TEST_MKL
 from torch.testing._internal.inductor_utils import _check_has_dynamic_shape, HAS_CPU
+from torch.testing._internal.common_mkldnn import bf32_on_and_off
 
 
 # The dict value is match_nodes(computation_op+unary_op)
@@ -298,9 +299,11 @@ class TestPatternMatcher(TestPatternMatcherBase):
                 generated_kernel_count = 1
             self.assertEqual(metrics.generated_kernel_count, generated_kernel_count)
 
+    @bf32_on_and_off()
     def test_conv2d_unary_cpu(self):
         self._test_conv_unary_cpu_base(dim=4)
 
+    @bf32_on_and_off()
     def test_conv3d_unary_cpu(self):
         self._test_conv_unary_cpu_base(dim=5)
 
@@ -370,6 +373,7 @@ class TestPatternMatcher(TestPatternMatcherBase):
             matcher_nodes = 1
             self._test_common(mod, (v,), matcher_count, matcher_nodes)
 
+    @bf32_on_and_off()
     def test_conv_transpose2d_unary(self):
         class M(torch.nn.Module):
             def __init__(
@@ -506,9 +510,11 @@ class TestPatternMatcher(TestPatternMatcherBase):
                 generated_kernel_count = 1
             self.assertEqual(metrics.generated_kernel_count, generated_kernel_count)
 
+    @bf32_on_and_off()
     def test_conv2d_binary(self):
         self._test_conv_binary_base(dim=4)
 
+    @bf32_on_and_off()
     def test_conv3d_binary(self):
         self._test_conv_binary_base(dim=5)
 
